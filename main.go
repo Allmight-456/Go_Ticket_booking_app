@@ -22,6 +22,9 @@ func main() {
 	var firstName string
 	var lastName string
 	var email string
+	// var bookings [50]string          //array of size 50
+	var bookings [] string              //slices => array of size unknown
+	// bookings := []string{}           //other syntax
 
 	//assigning values to variables
 	fmt.Println("Enter your first name: ")
@@ -37,9 +40,19 @@ func main() {
 	fmt.Scan(&userTickets)
 
 	remainingTickets = remainingTickets - userTickets
+
+	// bookings[0] = firstName + " " + lastName     // for array you define like this
+	bookings = append(bookings, firstName + " " + lastName)
+
+
+	fmt.Printf("The whole slice: %v\n", bookings)
+	fmt.Printf("The fist value: %v\n", bookings[0])
+	fmt.Printf("Slice type: %T\n", bookings)
+	fmt.Printf("Slice length: %v\n", len(bookings))           // %T is a placeholder for the type of the variable
+
+
 	// %v is a placeholder for the value of the variable
 	fmt.Printf("Thank You,User %v %v with email %v book %v tickets\n", firstName, lastName, email, userTickets)
 	fmt.Printf("%v tickets remaining for %v\n", remainingTickets, conferenceName)
-	// %T is a placeholder for the type of the variable
 
 }
