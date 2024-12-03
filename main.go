@@ -3,7 +3,18 @@ package main
 import (
 	"fmt"
 	"go_booking-app/validate"
+	"sync"
 )
+
+type UserData struct {       //new data type for entries having diffrent type of value
+	firstName string
+	lastName string
+	email string
+	numberOfTickets uint
+}
+
+//wait Group to wait for the goroutines to finish
+var waitGroup = sync.WaitGroup{}
 
 //First initialise the root directory : go mod init <module-name>
 // To run: go run main.go
@@ -17,7 +28,9 @@ var remainingTickets uint = 50
 // var bookings [50]string          //array of size 50
 // var bookings []string              //slices => array of size unknown
 // bookings := []string{}
-var bookings = make([]map[string]string,0)
+// var bookings = make([]map[string]string,0)     //list map containing key value pairs
+var bookings = make([]UserData,0)
+
 
 func main() {
 
@@ -43,11 +56,15 @@ func main() {
 		} else {
 
 			bookTickets(userTickets, firstName, lastName, email)
-			Fetch_firstNames()
 
+			waitGroup.Add(1)          //increases the counter for main thread to wait
+			//send ticket via email as a goroutine ,concurrency
+			go sendTicket(userTickets, firstName, lastName, email)
+			Fetch_firstNames()
 		}
 
 	}
+	waitGroup.Wait()
 }
 
 func greetUsers() {
@@ -85,16 +102,22 @@ func getUserInput() (string, string, string, uint) {
 func bookTickets(userTickets uint, firstName string, lastName string, email string) {
 	remainingTickets -= userTickets
 
-	//create a map for bookings to contain list of key-value pairs
-	var userData = make(map[string]string)
-	userData["firstName"]= firstName
-	userData["lastName"] = lastName
-	userData["email"] = email
-	userData["numberOfTickets"] = fmt.Sprintf("%v", userTickets)   //convert uint to string
+	// //create a map for bookings to contain list of key-value pairs
+	// var userData = make(map[string]string)
+	// userData["firstName"]= firstName
+	// userData["lastName"] = lastName
+	// userData["email"] = email
+	// userData["numberOfTickets"] = fmt.Sprintf("%v", userTickets)   //convert uint to string
+
+	userData := UserData{
+		firstName:firstName,
+		lastName:lastName, 
+		email:email, 
+		numberOfTickets:userTickets,
+	}
 	bookings = append(bookings, userData)
 
 	fmt.Printf("List of bookings is %v\n", bookings)
 	fmt.Printf("Thank You,User %v %v with email %v book %v tickets\n", firstName, lastName, email, userTickets)
 	fmt.Printf("%v tickets remaining for %v\n", remainingTickets, conferenceName)
-
 }
