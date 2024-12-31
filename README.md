@@ -1,6 +1,6 @@
-# Go Ticket Booking CLI App
+# TicketFlow 
 
-A robust backend application for managing conference ticket bookings. This project is built with **Go** and incorporates advanced features such as package-level variables, modular code organization, inter-package communication, maps, slices, and input validation.
+Go based ticket booking app: A robust backend application for managing conference ticket bookings. This project is built with **Go** and incorporates advanced features such as package-level variables, modular code organization, inter-package communication, maps, slices, and input validation.
 
 ---
 
