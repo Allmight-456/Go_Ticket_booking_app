@@ -1,0 +1,55 @@
+# version tag removed — obsolete in Compose v2+
+
+services:
+  # ── Application ─────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgres://ticketflow:secret@postgres:5432/ticketflow?sslmode=disable
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ticketflow
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: ticketflow
+    ports:
+      - "5433:5432"    # host:5433 → container:5432 (avoids conflict with native postgres)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ticketflow -d ticketflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no  # no persistence needed for cache/locks
+    ports:
+      - "6380:6379"    # host:6380 → container:6379 (avoids conflict with arise_fastapi_redis)
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
