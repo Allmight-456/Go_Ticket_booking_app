@@ -329,6 +329,9 @@ curl -s -X POST localhost:8080/events \
 
 You **must** send the current `version` field. This is the optimistic lock — if someone else edited the event between your GET and your PUT, the version will have changed and you'll get a 409 instead of silently overwriting.
 
+The event ID can be provided **either** in the URL path (preferred) **or** as an `"id"` field in the JSON body. Both are equivalent — the URL param takes precedence if both are given.
+
+**Option A — ID in the URL path (standard REST):**
 ```bash
 curl -s -X PUT localhost:8080/events/<event-id> \
   -H "Content-Type: application/json" \
@@ -346,9 +349,35 @@ curl -s -X PUT localhost:8080/events/<event-id> \
   }'
 ```
 
+**Option B — ID in the request body (useful when you don't want to build the URL dynamically):**
+```bash
+curl -s -X PUT localhost:8080/events \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -d '{
+    "id": "<event-id>",
+    "name": "Go Conference 2026 — Updated",
+    "description": "Now with workshops!",
+    "location": "Bangalore, India",
+    "starts_at": "2026-12-01T09:00:00Z",
+    "ends_at":   "2026-12-01T20:00:00Z",
+    "total_tickets": 100,
+    "price_cents": 6000,
+    "status": "published",
+    "version": 1
+  }'
+```
+
+> **Getting the event ID:** call `GET /events` first. The `"id"` field in each returned event object is the UUID to use here. The `"version"` field from that same GET response is what you send as `"version"`.
+
 **Version mismatch → 409:**
 ```json
 {"error": "version conflict — reload and retry"}
+```
+
+**Missing ID (neither URL nor body) → 400:**
+```json
+{"error": "event id is required: provide it in the URL path (/events/{id}) or as 'id' in the request body"}
 ```
 
 ---
@@ -767,6 +796,11 @@ curl -X PUT $BASE_URL/events/$EVENT_ID \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{...,"version":1}'
+# OR — embed the id in the body (no EVENT_ID needed in the URL):
+curl -X PUT $BASE_URL/events \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"'$EVENT_ID'",...,"version":1}'
 
 curl -X DELETE $BASE_URL/events/$EVENT_ID \
   -H "Authorization: Bearer $ADMIN_TOKEN"

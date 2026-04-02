@@ -35,7 +35,9 @@ type CreateEventRequest struct {
 }
 
 // UpdateEventRequest carries validated input for updating an event.
+// ID is optional in the body — if omitted, the URL path parameter is used.
 type UpdateEventRequest struct {
+	ID           uuid.UUID         `json:"id"`
 	Name         string            `json:"name"`
 	Description  string            `json:"description"`
 	Location     string            `json:"location"`

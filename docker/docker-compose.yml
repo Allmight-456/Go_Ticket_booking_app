@@ -51,5 +51,22 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # ── pgAdmin (optional — uncomment this block to enable a browser-based DB GUI) ─
+  # See docker/PGADMIN_GUIDE.md for full setup instructions.
+  # pgadmin:
+  #   image: dpage/pgadmin4:latest
+  #   environment:
+  #     PGADMIN_DEFAULT_EMAIL: admin@ticketflow.local
+  #     PGADMIN_DEFAULT_PASSWORD: pgadminpass
+  #   ports:
+  #     - "5050:80"          # open http://localhost:5050 in your browser
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #   volumes:
+  #     - pgadmin_data:/var/lib/pgadmin
+  #   restart: unless-stopped
+
 volumes:
   postgres_data:
+  # pgadmin_data:    # uncomment when the pgadmin service above is enabled

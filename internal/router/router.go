@@ -67,7 +67,8 @@ func New(
 		r.Group(func(r chi.Router) {
 			r.Use(adminOnly)
 			r.Post("/events", eventH.Create)
-			r.Put("/events/{id}", eventH.Update)
+			r.Put("/events/{id}", eventH.Update) // ID in URL path (preferred)
+			r.Put("/events", eventH.Update)      // ID in request body (fallback)
 			r.Delete("/events/{id}", eventH.Delete)
 			r.Post("/events/batch", eventH.BatchCreate)
 		})

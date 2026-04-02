@@ -78,10 +78,6 @@ func (h *EventHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *EventHandler) Update(w http.ResponseWriter, r *http.Request) {
-	id, ok := parseUUID(w, chi.URLParam(r, "id"))
-	if !ok {
-		return
-	}
 	claims, ok := middleware.GetClaims(r.Context())
 	if !ok {
 		renderError(w, http.StatusUnauthorized, "unauthorized")
@@ -90,6 +86,22 @@ func (h *EventHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	var req service.UpdateEventRequest
 	if !decode(w, r, &req) {
+		return
+	}
+
+	// Resolve event ID: URL path param takes precedence, body "id" is the fallback.
+	var id uuid.UUID
+	if urlParam := chi.URLParam(r, "id"); urlParam != "" {
+		parsed, err := uuid.Parse(urlParam)
+		if err != nil {
+			renderError(w, http.StatusBadRequest, "invalid UUID in URL path")
+			return
+		}
+		id = parsed
+	} else if req.ID != uuid.Nil {
+		id = req.ID
+	} else {
+		renderError(w, http.StatusBadRequest, "event id is required: provide it in the URL path (/events/{id}) or as 'id' in the request body")
 		return
 	}
 

@@ -1,73 +1,67 @@
-# TicketFlow — Production REST API
+# TicketFlow — Event Management & Ticket Booking REST API
 
-> **Transformation:** CLI learning exercise → concurrent event-booking backend in Go
-> JWT-based RBAC · Conflict detection · Version-controlled audit trail · Rate limiting · Batch operations
+A production-grade REST API backend for managing events and booking tickets, built in Go with Clean Architecture.
+
+> JWT-based RBAC · Concurrency-safe booking · Optimistic locking · Immutable audit trail · Redis rate limiting · Batch operations
 
 ---
 
-## What Changed
+## Features
 
-| Before | After |
-|--------|-------|
-| CLI, single goroutine, in-memory | REST API on Chi router |
-| `[]UserData` slice | PostgreSQL 16 (pgx v5) + Redis 7 |
-| No auth | JWT HS256 + bcrypt, admin/user RBAC |
-| No concurrency safety | Redis lock + `SELECT FOR UPDATE` + optimistic version |
-| No history | Immutable JSONB audit log with field-level diff |
-| No rate limiting | Redis sliding-window Lua script (100 req/min) |
-| Single `main.go` | Clean Architecture — 25 files across 7 layers |
-
-The old CLI files (`main.go`, `helper.go`, `validate/`) are **dead code** — the new entry point is `cmd/api/main.go`. They can be safely deleted.
+- **Event Management** — Create, update, soft-delete, and list events (admin-only writes). Supports batch creation of up to 50 events in a single atomic round-trip via pgx's Batch API.
+- **Ticket Booking** — Users book tickets through a 10-step conflict-safe flow combining a Redis distributed lock, a PostgreSQL `SELECT FOR UPDATE`, and an optimistic version check. Cancellation automatically restores ticket inventory.
+- **Authentication & RBAC** — JWT HS256 tokens issued on register/login. Two roles: `user` (read + book) and `admin` (full event write access + audit trail). Passwords hashed with bcrypt.
+- **Audit Trail** — Every create/update/delete on events and bookings is recorded in an immutable JSONB log with field-level diffs, actor ID, and client IP. Admin-only via `GET /audit/{type}/{id}`.
+- **Rate Limiting** — Redis sliding-window Lua script enforces 100 requests per minute per IP across all endpoints.
+- **Structured Logging** — zerolog JSON output; pretty-printed in `development`, compact in `production`.
 
 ---
 
 ## Tech Stack
 
-| Concern | Choice | Why |
-|---------|--------|-----|
-| Router | `go-chi/chi/v5` | stdlib `http.Handler`, no custom context wrapper |
-| DB driver | `jackc/pgx/v5` | Native UUID/JSONB/ENUM, pgxpool, Batch API |
-| Cache + locks | `redis/go-redis/v9` | Atomic Lua scripts (lock release, rate limit) |
-| Auth | `golang-jwt/jwt/v5` + `bcrypt` | Industry standard, constant-time password compare |
-| Migrations | `golang-migrate/migrate/v4` | Versioned SQL files, auto-applied at startup |
-| Logging | `rs/zerolog` | Zero-alloc structured JSON (pretty in dev) |
-| Config | `joho/godotenv` + env vars | Twelve-factor, fails fast on missing required vars |
-| Container | Docker multi-stage | ~15 MB final image (build: `golang:1.23-alpine` → run: `alpine:3.20`) |
+| Concern | Library | Why |
+|---------|---------|-----|
+| Router | `go-chi/chi/v5` | Lightweight, stdlib-compatible `http.Handler`; no custom context wrapper |
+| DB driver | `jackc/pgx/v5` | Native UUID/JSONB/ENUM support, `pgxpool`, Batch API |
+| Cache + locks | `redis/go-redis/v9` | Atomic Lua scripts for lock release and rate limiting |
+| Auth | `golang-jwt/jwt/v5` + `bcrypt` | Industry-standard JWT; constant-time password comparison |
+| Migrations | `golang-migrate/migrate/v4` | Versioned SQL files auto-applied at startup |
+| Logging | `rs/zerolog` | Zero-alloc structured JSON |
+| Config | `joho/godotenv` + env vars | Twelve-factor; fails fast on missing required vars |
+| Container | Docker multi-stage | ~15 MB final image (`golang:1.23-alpine` → `alpine:3.20`) |
 
 ---
 
 ## Quick Start
 
-> **This project's dev workflow:** PostgreSQL + Redis run as Docker containers.
-> The Go app runs natively on your machine. Containerise the app only when ready for deployment.
+> **Dev workflow:** PostgreSQL + Redis run as Docker containers. The Go app runs natively on your machine. Containerise the app only for deployment.
 
-### Step 1 — Infrastructure containers
+### 1 — Start infrastructure
 
 ```bash
-# Ports used: postgres→5433, redis→6380
-# (avoids conflicts with any existing native postgres/redis on default ports)
 cd docker
 docker compose up postgres redis -d
-
-# Confirm both are healthy before continuing:
-docker compose ps
 ```
 
-Expected output:
+Wait for both to be healthy (~5 s):
+```bash
+docker compose ps
+```
 ```
 NAME                IMAGE              STATUS
 docker-postgres-1   postgres:16-alpine Up (healthy)   0.0.0.0:5433->5432/tcp
 docker-redis-1      redis:7-alpine     Up (healthy)   0.0.0.0:6380->6379/tcp
 ```
 
-### Step 2 — Configure environment
+Ports `5433` (postgres) and `6380` (redis) are intentionally offset to avoid collisions with any locally installed instances on their default ports.
+
+### 2 — Configure environment
 
 ```bash
-# From project root:
 cp .env.example .env
 ```
 
-The only values you must set (the rest have working defaults):
+Minimum required values:
 
 ```env
 DATABASE_URL=postgres://ticketflow:secret@localhost:5433/ticketflow?sslmode=disable
@@ -75,17 +69,17 @@ REDIS_URL=redis://localhost:6380
 JWT_SECRET=<run: openssl rand -hex 32>
 ```
 
-### Step 3 — Run the Go app
+### 3 — Run the API
 
 ```bash
-# First time: download all dependencies (generates go.sum)
+# First run: fetch all dependencies
 go mod tidy
 
-# Start the server (migrations apply automatically on first run)
+# Start (database migrations apply automatically)
 go run ./cmd/api/...
 ```
 
-Expected log output:
+Expected startup:
 ```
 INF postgres pool connected
 INF database migrations applied
@@ -98,12 +92,13 @@ curl localhost:8080/health
 # {"status":"ok"}
 ```
 
-### Step 4 — Fully containerised (deployment)
+### 4 — Fully containerised (deployment)
 
 ```bash
 cd docker && docker compose up --build
-# Starts api + postgres + redis, all communicating over Docker's internal network
 ```
+
+Starts `api` + `postgres` + `redis` on Docker's internal network.
 
 ---
 
@@ -149,9 +144,9 @@ ticketflow/
 │   │   ├── rbac.go              │  RequireAdmin / RequireRole
 │   │   └── rate_limiter.go      └  Redis sliding-window, 100 req/min per IP
 │   │
-│   └── router/router.go         ← Chi router: public / auth / admin route groups
+│   └── router/router.go         ← Chi router: public / authenticated / admin route groups
 │
-├── migrations/                  ← Plain SQL, run once at startup
+├── migrations/                  ← Plain SQL, versioned pairs (up only — no down migrations created)
 │   ├── 001_create_users.up.sql
 │   ├── 002_create_events.up.sql
 │   ├── 003_create_bookings.up.sql
@@ -159,13 +154,37 @@ ticketflow/
 │
 ├── docker/
 │   ├── Dockerfile               ← Multi-stage build
-│   └── docker-compose.yml       ← App + postgres (5433) + redis (6380) with health checks
+│   ├── docker-compose.yml       ← postgres (5433) + redis (6380) + optional pgAdmin (5050)
+│   └── PGADMIN_GUIDE.md         ← Optional: browser-based DB GUI setup instructions
 │
 ├── .env / .env.example
 ├── go.mod / go.sum
-├── MEMORY.md                    ← Project context for AI agents
-└── API_GUIDE.md                 ← Step-by-step API walkthrough + troubleshooting
+└── API_GUIDE.md                 ← Complete endpoint reference + curl walkthrough + troubleshooting
 ```
+
+---
+
+## API Reference
+
+See **[API_GUIDE.md](./API_GUIDE.md)** for the complete endpoint reference, authentication setup, curl examples for every route, conflict-detection testing, and troubleshooting guide.
+
+### Endpoint summary
+
+| Endpoint | Method | Auth |
+|----------|--------|------|
+| `/health` | GET | Public |
+| `/auth/register` | POST | Public |
+| `/auth/login` | POST | Public |
+| `/events` | GET | User token |
+| `/events/{id}` | GET | User token |
+| `/bookings` | POST | User token |
+| `/bookings/{id}` | DELETE | User token (owner only) |
+| `/bookings/batch` | POST | User token |
+| `/events` | POST | **Admin token** |
+| `/events/{id}` | PUT | **Admin token** |
+| `/events/{id}` | DELETE | **Admin token** |
+| `/events/batch` | POST | **Admin token** |
+| `/audit/{type}/{id}` | GET | **Admin token** |
 
 ---
 
@@ -190,42 +209,34 @@ audit_logs ─────┘  (actor_id nullable — system events have no user
 | UUID primary keys | No sequential ID guessing; safe to expose in URLs |
 | `TIMESTAMPTZ` everywhere | Always UTC; eliminates timezone ambiguity |
 | Price as `INT` cents (never `FLOAT`) | Floating-point arithmetic on money causes rounding errors |
-| Soft-delete on events (`deleted_at`) | Historical bookings keep their FK reference |
-| `version INT` on events + bookings | Optimistic locking — concurrent updates detected without table locks |
+| Soft-delete on events (`deleted_at`) | Historical bookings keep their FK reference intact |
+| `version INT` on events + bookings | Optimistic locking — concurrent updates detected without table-level locks |
 | Partial unique index on bookings | One active booking per user per event; re-booking allowed after cancellation |
 | `JSONB` audit columns + GIN index | Fast containment queries: `diff @> '{"price_cents": {}}'` |
 
-### `.up.sql` — why that filename?
-
-`golang-migrate` uses versioned pairs:
-```
-001_create_users.up.sql    ← applied when migrating UP (first run, CI)
-001_create_users.down.sql  ← applied when rolling BACK (not created here)
-```
-
-A `schema_migrations` table is auto-created in your DB. Running the app a second time is safe — already-applied migrations are skipped.
-
-### Connecting to the DB directly
+### Connecting directly
 
 ```bash
-# Dev (container on port 5433):
+# From the docker/ directory:
 docker compose exec postgres psql -U ticketflow -d ticketflow
 
-# Useful queries:
-\dt                                       -- list tables
+# Useful queries
+\dt
 SELECT email, role FROM users;
-SELECT name, remaining_tickets, version FROM events;
+SELECT name, remaining_tickets, version FROM events WHERE deleted_at IS NULL;
 SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 10;
 ```
+
+> **Optional — pgAdmin GUI:** If you prefer a browser-based database explorer, see [docker/PGADMIN_GUIDE.md](./docker/PGADMIN_GUIDE.md). pgAdmin is **not required** to run the API — it is purely a visual inspection tool. The `pgadmin` service in `docker-compose.yml` is commented out by default; follow the guide to enable it.
 
 ---
 
 ## Booking Conflict Detection — The 10-Step Flow
 
-When multiple users race to book the last ticket, this is what happens:
+When multiple users race to book the last ticket simultaneously:
 
 ```
-N requests → POST /bookings
+N concurrent POST /bookings requests
       │
       ▼
 [Rate Limiter]         Redis sliding-window: 100 req/min per IP
@@ -261,47 +272,34 @@ InvalidateCache()      Forces next GET /events/:id to re-read from DB
 
 ---
 
-## Go Patterns — C and Python Analogies
-
-| Go feature | C analogy | Python analogy |
-|-----------|-----------|----------------|
-| `defer tx.Rollback()` | `goto cleanup` at function end | `with` statement / `__exit__` |
-| Multiple return `(val, err)` | Output pointer `int fn(T* out)` | Tuple return `return val, err` |
-| Interface implicit satisfaction | Manual vtable (fn pointers in struct) | Duck typing — but compile-time |
-| `context.Context` propagation | `select()` / `poll()` on fd | `asyncio` task cancellation |
-| `fmt.Errorf("wrap: %w", err)` | `errno` (loses context) | `raise X from Y` chaining |
-| Struct tags `json:"field"` | Manual serialisation code | Pydantic `Field()` / `dataclass` |
-| `internal/` directory | `static` (file-scoped) | `_module.py` (convention only) |
-| Goroutines | `pthread_create` (heavier, fixed stack) | `threading.Thread` (GIL limits true parallelism) |
-
----
-
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | ✅ | — | `postgres://ticketflow:secret@localhost:5433/ticketflow?sslmode=disable` |
-| `JWT_SECRET` | ✅ | — | ≥ 32 chars — `openssl rand -hex 32` |
-| `REDIS_URL` | — | `redis://localhost:6379` | Update to `6380` for local dev |
-| `PORT` | — | `8080` | HTTP server port |
+| `DATABASE_URL` | ✅ | — | Full PostgreSQL connection string |
+| `JWT_SECRET` | ✅ | — | ≥ 32 chars — generate with `openssl rand -hex 32` |
+| `REDIS_URL` | — | `redis://localhost:6379` | Use `redis://localhost:6380` for local dev |
+| `PORT` | — | `8080` | HTTP server listen port |
 | `JWT_EXPIRATION` | — | `24h` | Go duration string: `1h`, `7d`, etc. |
-| `APP_ENV` | — | `development` | Set `production` for JSON (non-pretty) logs |
+| `APP_ENV` | — | `development` | Set to `production` for compact JSON logs |
 | `MIGRATIONS_PATH` | — | `migrations` | Override migrations directory path |
 
 ---
 
 ## Promoting a User to Admin
 
-Newly registered users are always `role=user`. Promote via psql:
+All newly registered users have `role=user`. There is no API endpoint for promotion — it requires direct database access (privilege escalation cannot happen through the API).
 
 ```bash
+# 1. Promote in the database
 docker compose exec postgres psql -U ticketflow -d ticketflow \
   -c "UPDATE users SET role='admin' WHERE email='your@email.com';"
-```
 
-Then log in again — the new JWT will carry `"role":"admin"`.
+# 2. Login again — the old token still carries role=user
+# The new JWT issued by POST /auth/login will carry role=admin
+```
 
 ---
 
-*Module: `github.com/Allmight-456/ticketflow` — built as a portfolio/learning project.*
-*See `API_GUIDE.md` for step-by-step curl walkthrough and troubleshooting.*
+*Module: `github.com/Allmight-456/ticketflow`*
+*See [API_GUIDE.md](./API_GUIDE.md) for the full endpoint walkthrough and troubleshooting guide.*

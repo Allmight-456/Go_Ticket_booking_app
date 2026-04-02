@@ -1,0 +1,26 @@
+# Environment — contains secrets, never commit
+.env
+
+# Auto-memory files — local AI assistant context, not part of the project
+MEMORY.md
+.claude/
+
+# Go build artefacts
+*.exe
+*.test
+/bin/
+/dist/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Code analysis / repomix exports
+repomix-output.xml
+*.repomix.xml
+
+# OS
+.DS_Store
+Thumbs.db
